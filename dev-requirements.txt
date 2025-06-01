@@ -1,113 +1,28 @@
-name: Build Streamlink for Multiple Platforms
+# setup
+pip >=21.0.0
+setuptools >=64.0.0  # required for being able to run editable installs
+versioningit >=2.0.0,<4  # required for being able to run editable installs
 
-on:
-  workflow_dispatch:  # 手动触发
+# tests
+pytest >=8.0.0
+pytest-trio
+requests-mock
+freezegun >=1.5.0
 
-jobs:
-  build:
-    name: Build for ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ ubuntu-22.04, windows-latest ]
-        include:
-          - os: ubuntu-22.04
-            name: linux
-            binary-name: streamlink
-          - os: windows-latest
-            name: windows
-            binary-name: streamlink.exe
+# code-coverage
+pytest-cov
+coverage[toml]
 
-    steps:
-      # 检出代码
-      - uses: actions/checkout@v4
+# code-linting / code-formatting
+ruff ==0.11.12
 
-      # 设置Python环境
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'  # Streamlink支持的Python版本
-
-      # 安装依赖
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install pyinstaller
-          pip install .  # 安装Streamlink项目及其依赖
-          pip install -r dev-requirements.txt  # 安装开发依赖
-
-      # 构建二进制
-      - name: Build Binary with PyInstaller
-        run: |
-          pyinstaller --onefile --name ${{ matrix.binary-name }} src/streamlink_cli/main.py
-
-      # 上传二进制Artifacts
-      - name: Upload Binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: streamlink-${{ matrix.name }}
-          path: dist/${{ matrix.binary-name }}
-
-  build-appimage:
-    name: Build Linux AppImage
-    runs-on: ubuntu-22.04  # 使用Ubuntu 22.04，确保glibc 2.35
-
-    steps:
-      # 检出代码
-      - uses: actions/checkout@v4
-
-      # 设置Python环境
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      # 安装依赖
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y python3.11 python3.11-dev python3.11-distutils
-          python3.11 -m pip install --upgrade pip
-          python3.11 -m pip install pyinstaller
-          python3.11 -m pip install .  # 安装Streamlink项目及其依赖
-          python3.11 -m pip install -r dev-requirements.txt  # 安装开发依赖
-
-      # 构建Linux二进制（为AppImage准备）
-      - name: Build Binary with PyInstaller
-        run: |
-          python3.11 -m PyInstaller --onefile --name streamlink src/streamlink_cli/main.py
-
-      # 安装libfuse2和AppImage工具
-      - name: Install libfuse2 and appimagetool
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libfuse2
-          wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
-          chmod +x appimagetool-x86_64.AppImage
-
-      # 创建AppImage
-      - name: Create AppImage
-        run: |
-          mkdir -p AppDir/usr/bin
-          cp dist/streamlink AppDir/usr/bin/
-          # 创建.desktop文件，放置在AppDir根目录
-          echo "[Desktop Entry]
-          Name=Streamlink
-          Exec=streamlink
-          Type=Application
-          Terminal=true
-          Icon=streamlink
-          Categories=AudioVideo;" > AppDir/streamlink.desktop
-          # 创建简单的占位图标文件
-          touch AppDir/streamlink.png
-          # 设置AppImage入口
-          ln -s usr/bin/streamlink AppDir/AppRun
-          # 生成AppImage
-          ./appimagetool-x86_64.AppImage AppDir streamlink-x86_64.AppImage
-
-      # 上传AppImage
-      - name: Upload AppImage
-        uses: actions/upload-artifact@v4
-        with:
-          name: streamlink-appimage
-          path: streamlink-x86_64.AppImage
+# typing
+mypy[faster-cache] ==1.16.0 ; python_version<'3.14'
+mypy ==1.16.0 ; python_version>='3.14'  # orjson (faster-cache mypy extra) currently fails building on 3.14
+typing-extensions >=4.0.0
+lxml-stubs
+trio-typing
+types-freezegun
+types-requests
+types-setuptools
+types-urllib3
