@@ -73,9 +73,11 @@ jobs:
         run: |
           pyinstaller --onefile --name streamlink src/streamlink_cli/main.py
 
-      # 安装AppImage工具
-      - name: Install appimagetool
+      # 安装libfuse2和AppImage工具
+      - name: Install libfuse2 and appimagetool
         run: |
+          sudo apt-get update
+          sudo apt-get install -y libfuse2
           wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x appimagetool-x86_64.AppImage
 
