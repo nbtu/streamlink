@@ -86,14 +86,14 @@ jobs:
         run: |
           mkdir -p AppDir/usr/bin
           cp dist/streamlink AppDir/usr/bin/
-          # 创建.desktop文件，放置在AppDir根目录，添加Categories字段
+          # 创建.desktop文件，放置在AppDir根目录，调整Categories字段
           echo "[Desktop Entry]
           Name=Streamlink
           Exec=streamlink
           Type=Application
           Terminal=true
           Icon=streamlink
-          Categories=Multimedia;" > AppDir/streamlink.desktop
+          Categories=AudioVideo;" > AppDir/streamlink.desktop
           # 创建简单的占位图标文件
           touch AppDir/streamlink.png
           # 设置AppImage入口
