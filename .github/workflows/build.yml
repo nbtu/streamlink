@@ -9,7 +9,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ ubuntu-22.04, windows-latest ]  # 改为ubuntu-22.04
+        os: [ ubuntu-22.04, windows-latest ]
         include:
           - os: ubuntu-22.04
             name: linux
@@ -36,11 +36,16 @@ jobs:
           pip install .  # 安装Streamlink项目及其依赖
           pip install -r dev-requirements.txt  # 安装开发依赖
 
+      # 修改_version.py以硬编码版本号
+      - name: Hardcode version in _version.py
+        run: |
+          echo '__version__ = "7.3.0"' > src/streamlink/_version.py
+          # 请替换为实际版本号，或从pyproject.toml提取
+
       # 构建二进制
       - name: Build Binary with PyInstaller
         run: |
-          pyinstaller --onefile --add-data "pyproject.toml:." --name ${{ matrix.binary-name }} src/streamlink_cli/main.py
-          # 添加--add-data以包含pyproject.toml
+          pyinstaller --onefile --name ${{ matrix.binary-name }} src/streamlink_cli/main.py
 
       # 上传二进制Artifacts
       - name: Upload Binary
@@ -73,11 +78,16 @@ jobs:
           python3.11 -m pip install .  # 安装Streamlink项目及其依赖
           python3.11 -m pip install -r dev-requirements.txt  # 安装开发依赖
 
+      # 修改_version.py以硬编码版本号
+      - name: Hardcode version in _version.py
+        run: |
+          echo '__version__ = "7.3.0"' > src/streamlink/_version.py
+          # 请替换为实际版本号，或从pyproject.toml提取
+
       # 构建Linux二进制（为AppImage准备）
       - name: Build Binary with PyInstaller
         run: |
-          python3.11 -m PyInstaller --onefile --add-data "pyproject.toml:." --name streamlink src/streamlink_cli/main.py
-          # 添加--add-data以包含pyproject.toml
+          python3.11 -m PyInstaller --onefile --name streamlink src/streamlink_cli/main.py
 
       # 安装libfuse2和AppImage工具
       - name: Install libfuse2 and appimagetool
