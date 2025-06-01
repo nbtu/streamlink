@@ -9,7 +9,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ ubuntu-latest, windows-latest ]
+        os: [ ubuntu-22.04, windows-latest ]
         include:
           - os: ubuntu-22.04
             name: linux
@@ -34,7 +34,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install pyinstaller
           pip install .  # 安装Streamlink项目及其依赖
-          pip install -r dev-requirements.txt  # 安装开发依赖，包括versioningit
+          pip install -r dev-requirements.txt  # 安装开发依赖
 
       # 构建二进制
       - name: Build Binary with PyInstaller
@@ -50,7 +50,7 @@ jobs:
 
   build-appimage:
     name: Build Linux AppImage
-    runs-on: ubuntu-22.04  # 使用Ubuntu 22.04确保glibc兼容性
+    runs-on: ubuntu-22.04  # 使用Ubuntu 22.04，确保glibc 2.35
 
     steps:
       # 检出代码
@@ -65,15 +65,17 @@ jobs:
       # 安装依赖
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install pyinstaller
-          pip install .  # 安装Streamlink项目及其依赖
-          pip install -r dev-requirements.txt  # 安装开发依赖，包括versioningit
+          sudo apt-get update
+          sudo apt-get install -y python3.11 python3.11-dev python3.11-distutils
+          python3.11 -m pip install --upgrade pip
+          python3.11 -m pip install pyinstaller
+          python3.11 -m pip install .  # 安装Streamlink项目及其依赖
+          python3.11 -m pip install -r dev-requirements.txt  # 安装开发依赖
 
       # 构建Linux二进制（为AppImage准备）
       - name: Build Binary with PyInstaller
         run: |
-          pyinstaller --onefile --name streamlink src/streamlink_cli/main.py
+          python3.11 -m PyInstaller --onefile --name streamlink src/streamlink_cli/main.py
 
       # 安装libfuse2和AppImage工具
       - name: Install libfuse2 and appimagetool
