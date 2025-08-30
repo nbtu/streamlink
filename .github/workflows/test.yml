@@ -49,7 +49,7 @@ jobs:
             | git fetch origin --depth=300 \
             || { ec=$?; [ $ec -eq 141 ] && true || (exit $ec); }
           git fetch origin --depth=300 --update-shallow
-          git describe --tags --long --dirty
+          git describe --tags --long --dirty --always
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
