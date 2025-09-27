@@ -11,9 +11,9 @@ jobs:
       matrix:
         os: [ ubuntu-22.04, windows-latest ]
         include:
-          - os: ubuntu-22.04
-            name: linux
-            binary-name: streamlink
+          #- os: ubuntu-22.04
+          #  name: linux
+          #  binary-name: streamlink
           - os: windows-latest
             name: windows
             binary-name: streamlink.exe
@@ -60,97 +60,4 @@ jobs:
           name: streamlink-${{ matrix.name }}
           path: dist/${{ matrix.binary-name }}
 
-  build-appimage:
-    name: Build Linux AppImage
-    runs-on: ubuntu-22.04  # 使用Ubuntu 22.04，确保glibc兼容性
-
-    steps:
-      # 检出代码
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      # 设置Python环境
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      # 安装依赖
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y python3.11 python3.11-dev python3.11-distutils
-          python3.11 -m pip install --upgrade pip
-          python3.11 -m pip install pyinstaller toml
-          # 提取依赖到requirements.txt
-          python3.11 -c "import toml; config = toml.load('pyproject.toml'); deps = config['project']['dependencies']; print('\n'.join(deps))" > requirements.txt
-          python3.11 -m pip install -r requirements.txt
-          python3.11 -m pip install -r dev-requirements.txt
-
-      # 修改_version.py以硬编码版本号
-      - name: Hardcode version in _version.py
-        run: |
-          VERSION=999 #$(python3.11 -c "import toml; print(toml.load('pyproject.toml')['project']['version'])")
-          echo "__version__ = \"$VERSION\"" > src/streamlink/_version.py
-          cat src/streamlink/_version.py  # 调试输出
-
-      # 构建Linux二进制（为AppImage准备）
-      - name: Build Binary with PyInstaller
-        run: |
-          python3.11 -m PyInstaller --onefile --name streamlink src/streamlink_cli/main.py
-
-      # 安装libfuse2和AppImage工具
-      - name: Install libfuse2 and appimagetool
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libfuse2
-          wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
-          chmod +x appimagetool-x86_64.AppImage
-
-      # 创建AppImage
-      - name: Create AppImage
-        run: |
-          mkdir -p AppDir/usr/bin
-          mkdir -p AppDir/usr/lib/python3.11/site-packages
-          cp dist/streamlink AppDir/usr/bin/
-          # 复制依赖到AppDir
-          cp -r $(python3.11 -c "import site; print(site.getsitepackages()[0])")/* AppDir/usr/lib/python3.11/site-packages/
-          # 创建.desktop文件
-          echo "[Desktop Entry]
-          Name=Streamlink
-          Exec=streamlink
-          Type=Application
-          Terminal=true
-          Icon=streamlink
-          Categories=AudioVideo;" > AppDir/streamlink.desktop
-          # 创建占位图标文件
-          touch AppDir/streamlink.png
-          # 创建AppRun脚本（参考官方）
-          cat > AppDir/AppRun <<EOF
-          #!/usr/bin/env bash
-          HERE=\$(dirname -- "\$(readlink -f -- "\$0")")
-          PYTHON=\$(readlink -f -- "\${HERE}/usr/bin/python3.11")
-          export PYTHONPATH=\$(realpath -- "\${HERE}/usr/lib/python3.11/site-packages")
-          export SSL_CERT_FILE=\${SSL_CERT_FILE:-"\${PYTHONPATH}/certifi/cacert.pem"}
-          "\${HERE}/usr/bin/streamlink" "\$@"
-          EOF
-          chmod +x AppDir/AppRun
-          # 复制Python解释器
-          cp $(which python3.11) AppDir/usr/bin/python3.11
-          # 生成AppImage
-          ./appimagetool-x86_64.AppImage AppDir streamlink-x86_64.AppImage
-
-      # 调试输出
-      - name: Debug AppImage contents
-        run: |
-          ls -l AppDir/usr/bin/
-          ls -l AppDir/usr/lib/python3.11/site-packages/
-          cat AppDir/AppRun
-
-      # 上传AppImage
-      - name: Upload AppImage
-        uses: actions/upload-artifact@v4
-        with:
-          name: streamlink-appimage
-          path: streamlink-x86_64.AppImage
+  
