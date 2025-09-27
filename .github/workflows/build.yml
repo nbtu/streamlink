@@ -1,4 +1,4 @@
-name: Build single-file Streamlink (Windows)
+name: Build Streamlink Windows
 
 on:
   workflow_dispatch:
