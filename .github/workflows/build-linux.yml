@@ -1,19 +1,25 @@
-name: Build Streamlink Linux Multi-Arch
+name: Build Streamlink Linux Binary
 
 on:
   workflow_dispatch:
+  push:
+    tags:
+      - "v*.*.*"
 
 jobs:
-  build:
+  build-linux:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest]   # 也可以加 macos-latest, windows-latest
+        os: [ubuntu-latest]
         arch: [x64, arm64]
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Check runner architecture
+        run: uname -m
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -21,23 +27,38 @@ jobs:
           python-version: "3.11"
           architecture: ${{ matrix.arch }}
 
-      - name: Install build deps
+      - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          sudo apt-get install -y ffmpeg git
+          python -m pip install --upgrade pip
           pip install -e .[decompress] pyinstaller
 
-      - name: Build binary
+      - name: Set project version
         run: |
           version="7.6.0"
           echo "__version__ = \"$version\"" > src/streamlink/_version.py
+          cat src/streamlink/_version.py
+
+      - name: Create PyInstaller entry script
+        run: |
           mkdir -p build
-          echo "from streamlink_cli.main import main; main()" > build/entry_point.py
+          cat > build/entry_point.py <<'PY'
+from streamlink_cli.main import main
+
+if __name__ == "__main__":
+    main()
+PY
+          cat build/entry_point.py
+
+      - name: Run PyInstaller
+        run: |
+          if [ -f build/entry_point.spec ]; then rm build/entry_point.spec; fi
           pyinstaller --noconfirm --onefile --name streamlink build/entry_point.py
           ls -lh dist/
 
-      - name: Upload artifact
+      - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
-          name: streamlink-${{ runner.os }}-${{ matrix.arch }}
-          path: dist/streamlink*
+          name: streamlink-linux-${{ matrix.arch }}
+          path: dist/streamlink
