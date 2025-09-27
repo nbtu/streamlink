@@ -56,6 +56,20 @@ jobs:
           pyinstaller --noconfirm --onefile --name streamlink --collect-all streamlink build/entry_point.py
           ls -l dist
 
+      # 8. 打包 release zip（exe + LICENSE + README）
+      - name: Package release zip
+        run: |
+          mkdir -p release
+          EXE="dist/streamlink"
+          if [ ! -f "$EXE" ]; then
+            echo "Expected $EXE not found"
+            exit 1
+          fi
+          cp "$EXE" release/
+          [ -f LICENSE ] && cp LICENSE release/
+          [ -f README.md ] && cp README.md release/
+          echo "Created release/streamlink-linux.zip"
+          ls -l release
 
       # 9. 上传 artifact
       - name: Upload build artifacts
