@@ -11,43 +11,40 @@ jobs:
     runs-on: windows-latest
 
     steps:
+      # 1. 检出源码
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      # 2. 设置 Python 3.11
       - name: Setup Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Upgrade pip and install dependencies
+      # 3. 升级 pip 并安装依赖，包括 versioningit、pyinstaller、toml
+      - name: Install build/runtime dependencies
         shell: pwsh
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          # 安装项目依赖、versioningit 以及 pyinstaller
           pip install ".[decompress]" versioningit pyinstaller toml
 
+      # 4. 生成 _version.py（这里写死版本号）
       - name: Generate src/streamlink/_version.py
         shell: pwsh
         run: |
-          #try {
-          #  $version = python -m versioningit
-          #} catch {
-          #  Write-Host "versioningit not available, falling back to pyproject.toml default-version"
-          #  $version = python -c "import toml; print(toml.load('pyproject.toml').get('tool',{}).get('versioningit',{}).get('default-version','0.0.0+unknown'))"
-          #}
-
-          #if (-not $version) { $version = "7.6.0" }
           $version = "7.6.0"
           "__version__ = `"$version`"" | Out-File src/streamlink/_version.py -Encoding utf8
           Get-Content src/streamlink/_version.py
 
-      - name: Install the package into venv
+      # 5. 安装项目到虚拟环境
+      - name: Install project into venv
         shell: pwsh
         run: |
           pip install --upgrade .
 
+      # 6. 创建 PyInstaller 入口脚本
       - name: Create PyInstaller entry script
         shell: pwsh
         run: |
@@ -57,14 +54,15 @@ jobs:
           '    main()' | Out-File -FilePath build/entry_point.py -Encoding utf8 -Append
           Get-Content build/entry_point.py
 
-
-      - name: Run PyInstaller to produce single-file EXE
+      # 7. PyInstaller 打包单文件 exe，收集所有 streamlink 包资源
+      - name: Build single-file EXE with PyInstaller
         shell: pwsh
         run: |
           if (Test-Path build/entry_point.spec) { Remove-Item build/entry_point.spec -Force }
-          pyinstaller --noconfirm --onefile --name streamlink build/entry_point.py
+          pyinstaller --noconfirm --onefile --name streamlink --collect-all streamlink build/entry_point.py
           ls -File dist
 
+      # 8. 打包 release zip（exe + LICENSE + README）
       - name: Package release zip
         shell: pwsh
         run: |
@@ -81,6 +79,7 @@ jobs:
           Write-Host "Created release/streamlink-windows.zip"
           Get-ChildItem release -Force
 
+      # 9. 上传 artifact
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
