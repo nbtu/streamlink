@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 import re
 import struct
+import base64
+import hashlib
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 from urllib.parse import urlparse
@@ -42,7 +44,27 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(".".join(__name__.split(".")[:-1]))
 
+class MouflonDecryptor:
+    _cached_hash = {}
+    key = "Quean4cai9boJa5a"
 
+    @classmethod
+    def _compute_hash(cls, key: str) -> bytes:
+        if key not in cls._cached_hash:
+            cls._cached_hash[key] = hashlib.sha256(key.encode("utf-8")).digest()
+        return cls._cached_hash[key]
+
+    @classmethod
+    def decode(cls, encrypted_b64: str) -> str:
+        hash_bytes = cls._compute_hash(cls.key)
+        hash_len = len(hash_bytes)
+        padded = encrypted_b64 + "=="
+        encrypted_data = base64.b64decode(padded)
+        decrypted_bytes = bytearray()
+        for i, cipher_byte in enumerate(encrypted_data):
+            decrypted_bytes.append(cipher_byte ^ hash_bytes[i % hash_len])
+        return decrypted_bytes.decode("utf-8", errors="ignore")
+        
 class ByteRangeOffset:
     sequence: int | None = None
     offset: int | None = None
@@ -305,7 +327,7 @@ class HLSStreamWorker(SegmentedStreamWorker[HLSSegment, Response]):
     writer: HLSStreamWriter
     stream: HLSStream
 
-    SEGMENT_QUEUE_TIMING_THRESHOLD_MIN = 5.0
+    SEGMENT_QUEUE_TIMING_THRESHOLD_MIN = 15.0
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -334,7 +356,7 @@ class HLSStreamWorker(SegmentedStreamWorker[HLSSegment, Response]):
         elif self.playlist_reload_time_override not in ["segment", "live-edge"]:
             self.playlist_reload_time_override = 0
 
-    def _fetch_playlist(self) -> Response:
+    def _fetch_playlist1(self) -> Response:
         res = self.session.http.get(
             self.stream.url,
             exception=StreamError,
@@ -344,7 +366,32 @@ class HLSStreamWorker(SegmentedStreamWorker[HLSSegment, Response]):
         res.encoding = "utf-8"
 
         return res
+        
+    def _fetch_playlist(self) -> Response:
+        res = self.session.http.get(
+            self.stream.url,
+            exception=StreamError,
+            retries=self.playlist_reload_retries,
+            **self.reader.request_params,
+        )
+        res.encoding = "utf-8"
 
+        # --- 在这里进行 MOUFLON 处理 ---
+        lines = res.text.splitlines()
+        new_lines = []
+        for i, line in enumerate(lines):
+            if line.startswith("#EXT-X-MOUFLON:FILE:"):
+                enc_str = line.split(":", 2)[2]  # FILE: 后面的加密串
+                real_url = MouflonDecryptor.decode(enc_str)
+                # 下一行通常是一个占位符 URL，比如 media.mp4，这里替换掉
+                # 注意 i+1 必须存在，并且不是空行
+                if i + 1 < len(lines) and lines[i+1] and not lines[i+1].startswith("#"):
+                    lines[i+1] = real_url
+        res._content = "\n".join(lines).encode("utf-8")
+        # --- 修改结束 ---
+        
+        return res
+        
     def reload_playlist(self):
         if self.closed:  # pragma: no cover
             return
