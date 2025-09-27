@@ -44,8 +44,10 @@ jobs:
       - name: Hardcode version in _version.py
         shell: pwsh
         run: |
-          $VERSION = python -c "import toml; print(toml.load('pyproject.toml')['project']['version'])"
+          $VERSION = "999"
           "__version__ = `"$VERSION`"" | Out-File src/streamlink/_version.py -Encoding utf8
+          #$VERSION = python -c "import toml; print(toml.load('pyproject.toml')['project']['version'])"
+          #"__version__ = `"$VERSION`"" | Out-File src/streamlink/_version.py -Encoding utf8
           Get-Content src/streamlink/_version.py
 
 
