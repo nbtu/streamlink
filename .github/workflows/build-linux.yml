@@ -11,7 +11,7 @@ jobs:
     strategy:
       matrix:
         arch: [x64, arm64]
-    runs-on: ${{ matrix.arch == 'x64' && 'ubuntu-latest' || 'ubuntu-22.04-arm64' }}
+    runs-on: ${{ matrix.arch == 'x64' && 'ubuntu-22.04' || 'ubuntu-22.04-arm64' }}
 
     steps:
       - name: Checkout repository
