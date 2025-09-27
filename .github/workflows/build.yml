@@ -31,15 +31,15 @@ jobs:
       - name: Generate src/streamlink/_version.py
         shell: pwsh
         run: |
-          try {
-            $version = python -m versioningit
-          } catch {
-            Write-Host "versioningit not available, falling back to pyproject.toml default-version"
-            $version = python -c "import toml; print(toml.load('pyproject.toml').get('tool',{}).get('versioningit',{}).get('default-version','0.0.0+unknown'))"
-          }
+          #try {
+          #  $version = python -m versioningit
+          #} catch {
+          #  Write-Host "versioningit not available, falling back to pyproject.toml default-version"
+          #  $version = python -c "import toml; print(toml.load('pyproject.toml').get('tool',{}).get('versioningit',{}).get('default-version','0.0.0+unknown'))"
+          #}
 
-          if (-not $version) { $version = "7.6.0" }
-
+          #if (-not $version) { $version = "7.6.0" }
+          $version = "7.6.0"
           "__version__ = `"$version`"" | Out-File src/streamlink/_version.py -Encoding utf8
           Get-Content src/streamlink/_version.py
 
