@@ -39,6 +39,11 @@ jobs:
           echo "__version__ = \"$version\"" > src/streamlink/_version.py
           cat src/streamlink/_version.py
 
+      # 5. 安装项目到虚拟环境
+      - name: Install project into venv
+        run: |
+          pip install --upgrade .
+
       - name: Create PyInstaller entry script
         run: |
           mkdir -p build
