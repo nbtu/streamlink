@@ -1,16 +1,15 @@
-from __future__ import annotations
-
 import logging
 import re
 import struct
-from collections.abc import Mapping
+import base64
+import hashlib
 from concurrent.futures import Future
 from datetime import datetime, timedelta
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Dict, List, Optional, Tuple, Type, Union
 from urllib.parse import urlparse
 
 from requests import Response
-from requests.exceptions import ChunkedEncodingError, ConnectionError, ContentDecodingError, InvalidSchema  # noqa: A004
+from requests.exceptions import ChunkedEncodingError, ConnectionError, ContentDecodingError, InvalidSchema
 
 from streamlink.buffers import RingBuffer
 from streamlink.exceptions import StreamError
@@ -24,22 +23,43 @@ from streamlink.stream.segmented import SegmentedStreamReader, SegmentedStreamWo
 from streamlink.utils.cache import LRUCache
 from streamlink.utils.crypto import AES, unpad
 from streamlink.utils.formatter import Formatter
-from streamlink.utils.l10n import Language
 from streamlink.utils.times import now
 
 
 log = logging.getLogger(".".join(__name__.split(".")[:-1]))
 
 
+
+class MouflonDecryptor:
+    _cached_hash = {}
+    key = "Quean4cai9boJa5a"
+
+    @classmethod
+    def _compute_hash(cls, key: str) -> bytes:
+        if key not in cls._cached_hash:
+            cls._cached_hash[key] = hashlib.sha256(key.encode("utf-8")).digest()
+        return cls._cached_hash[key]
+
+    @classmethod
+    def decode(cls, encrypted_b64: str) -> str:
+        hash_bytes = cls._compute_hash(cls.key)
+        hash_len = len(hash_bytes)
+        padded = encrypted_b64 + "=="
+        encrypted_data = base64.b64decode(padded)
+        decrypted_bytes = bytearray()
+        for i, cipher_byte in enumerate(encrypted_data):
+            decrypted_bytes.append(cipher_byte ^ hash_bytes[i % hash_len])
+        return decrypted_bytes.decode("utf-8", errors="ignore")
+        
 class ByteRangeOffset:
-    sequence: int | None = None
-    offset: int | None = None
+    sequence: Optional[int] = None
+    offset: Optional[int] = None
 
     @staticmethod
     def _calc_end(start: int, size: int) -> int:
         return start + max(size - 1, 0)
 
-    def cached(self, sequence: int, byterange: ByteRange) -> tuple[int, int]:
+    def cached(self, sequence: int, byterange: ByteRange) -> Tuple[int, int]:
         if byterange.offset is not None:
             bytes_start = byterange.offset
         elif self.offset is not None and self.sequence == sequence - 1:
@@ -54,7 +74,7 @@ class ByteRangeOffset:
 
         return bytes_start, bytes_end
 
-    def uncached(self, byterange: ByteRange) -> tuple[int, int]:
+    def uncached(self, byterange: ByteRange) -> Tuple[int, int]:
         bytes_start = byterange.offset
         if bytes_start is None:
             raise StreamError("Missing BYTERANGE offset")
@@ -65,8 +85,8 @@ class ByteRangeOffset:
 class HLSStreamWriter(SegmentedStreamWriter[HLSSegment, Response]):
     WRITE_CHUNK_SIZE = 8192
 
-    reader: HLSStreamReader
-    stream: HLSStream
+    reader: "HLSStreamReader"
+    stream: "HLSStream"
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -74,12 +94,12 @@ class HLSStreamWriter(SegmentedStreamWriter[HLSSegment, Response]):
 
         self.byterange: ByteRangeOffset = ByteRangeOffset()
         self.map_cache: LRUCache[str, Future] = LRUCache(self.threads)
-        self.key_data: bytes | bytearray | memoryview = b""
-        self.key_uri: str | None = None
+        self.key_data: Union[bytes, bytearray, memoryview] = b""
+        self.key_uri: Optional[str] = None
         self.key_uri_override = options.get("hls-segment-key-uri")
         self.stream_data = options.get("hls-segment-stream-data")
 
-        self.ignore_names: re.Pattern | None = None
+        self.ignore_names: Optional[re.Pattern] = None
         ignore_names = {*options.get("hls-segment-ignore-names")}
         if ignore_names:
             segments = "|".join(map(re.escape, ignore_names))
@@ -136,7 +156,7 @@ class HLSStreamWriter(SegmentedStreamWriter[HLSSegment, Response]):
 
         return AES.new(self.key_data, AES.MODE_CBC, iv)
 
-    def create_request_params(self, num: int, segment: HLSSegment | Map, is_map: bool):
+    def create_request_params(self, num: int, segment: Union[HLSSegment, Map], is_map: bool):
         request_params = dict(self.reader.request_params)
         headers = request_params.pop("headers", {})
 
@@ -151,7 +171,7 @@ class HLSStreamWriter(SegmentedStreamWriter[HLSSegment, Response]):
 
         return request_params
 
-    def put(self, segment: HLSSegment | None):
+    def put(self, segment: Optional[HLSSegment]):
         if self.closed:
             return
 
@@ -176,7 +196,7 @@ class HLSStreamWriter(SegmentedStreamWriter[HLSSegment, Response]):
         future = self.executor.submit(self.fetch, segment)
         self.queue(segment, future, False)
 
-    def fetch(self, segment: HLSSegment) -> Response | None:
+    def fetch(self, segment: HLSSegment) -> Optional[Response]:
         try:
             return self._fetch(
                 segment.uri,
@@ -186,18 +206,18 @@ class HLSStreamWriter(SegmentedStreamWriter[HLSSegment, Response]):
         except StreamError as err:
             log.error(f"Failed to fetch segment {segment.num}: {err}")
 
-    def fetch_map(self, segment: HLSSegment) -> Response | None:
-        segment_map: Map = segment.map  # type: ignore[assignment]  # map is not None
+    def fetch_map(self, segment: HLSSegment) -> Optional[Response]:
+        _map: Map = segment.map  # type: ignore[assignment]  # map is not None
         try:
             return self._fetch(
-                segment_map.uri,
+                _map.uri,
                 stream=False,
-                **self.create_request_params(segment.num, segment_map, True),
+                **self.create_request_params(segment.num, _map, True),
             )
         except StreamError as err:
             log.error(f"Failed to fetch map for segment {segment.num}: {err}")
 
-    def _fetch(self, url: str, **request_params) -> Response | None:
+    def _fetch(self, url: str, **request_params) -> Optional[Response]:
         if self.closed or not self.retries:  # pragma: no cover
             return None
 
@@ -289,69 +309,41 @@ class HLSStreamWriter(SegmentedStreamWriter[HLSSegment, Response]):
 
 
 class HLSStreamWorker(SegmentedStreamWorker[HLSSegment, Response]):
-    reader: HLSStreamReader
-    writer: HLSStreamWriter
-    stream: HLSStream
+    reader: "HLSStreamReader"
+    writer: "HLSStreamWriter"
+    stream: "HLSStream"
 
-    SEGMENT_QUEUE_TIMING_THRESHOLD_MIN = 5.0
+    SEGMENT_QUEUE_TIMING_THRESHOLD_MIN = 25.0
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
 
         self.playlist_changed = False
-        self.playlist_end: int | None = None
+        self.playlist_end: Optional[int] = None
         self.playlist_targetduration: float = 0
         self.playlist_sequence: int = -1
         self.playlist_sequence_last: datetime = now()
-        self.playlist_segments: list[HLSSegment] = []
+        self.playlist_segments: List[HLSSegment] = []
 
         self.playlist_reload_last: datetime = now()
-        self.playlist_reload_time: float = 6  # 原版默认值
+        self.playlist_reload_time: float = 6
         self.playlist_reload_time_override = self.session.options.get("hls-playlist-reload-time")
         self.playlist_reload_retries = self.session.options.get("hls-playlist-reload-attempts")
         self.segment_queue_timing_threshold_factor = self.session.options.get("hls-segment-queue-threshold")
         self.live_edge = self.session.options.get("hls-live-edge")
         self.duration_offset_start = int(self.stream.start_offset + (self.session.options.get("hls-start-offset") or 0))
         self.duration_limit = self.stream.duration or (
-            int(self.session.options.get("hls-duration")) if self.session.options.get("hls-duration") else None
-        )
+            int(self.session.options.get("hls-duration")) if self.session.options.get("hls-duration") else None)
         self.hls_live_restart = self.stream.force_restart or self.session.options.get("hls-live-restart")
-
-        # 添加aclAuth检测和递增参数（仅在aclAuth存在时初始化）
-        parsed_url = urlparse(self.stream.url)
-        query_params = dict(qp.split('=') for qp in parsed_url.query.split('&') if '=' in qp)
-        self.is_acl_auth = 'aclAuth' in query_params
-        if self.is_acl_auth:
-            self.preload_hint_url = None
-            self.part_target = 0.533  # 默认值，稍后从PART-TARGET更新
-            self.last_preload_hint = None  # 记录上一次的PRELOAD-HINT，避免重复
-            self.current_msn = -1  # 记录当前MEDIA-SEQUENCE
-            # 初始化_HLS_msn和_HLS_part
-            self.hls_msn = int(query_params.get('_HLS_msn', -1))
-            self.hls_part = int(query_params.get('_HLS_part', 0))
-            self.base_url = parsed_url.scheme + "://" + parsed_url.netloc + parsed_url.path
-            self.static_query = "&".join(
-                f"{k}={v}" for k, v in query_params.items() if k not in ('_HLS_msn', '_HLS_part')
-            )
-            log.info("Detected aclAuth, enabling PRELOAD-HINT and dynamic MSN/PART handling v20.29")
-            log.debug(f"Initial MSN: {self.hls_msn}, PART: {self.hls_part}")
 
         if str(self.playlist_reload_time_override).isnumeric() and float(self.playlist_reload_time_override) >= 2:
             self.playlist_reload_time_override = float(self.playlist_reload_time_override)
         elif self.playlist_reload_time_override not in ["segment", "live-edge"]:
             self.playlist_reload_time_override = 0
 
-    def _fetch_playlist(self) -> Response:
-        # 动态更新URL，包含递增的_HLS_msn和_HLS_part（仅在aclAuth存在时）
-        if self.is_acl_auth:
-            dynamic_query = f"_HLS_msn={self.hls_msn}&_HLS_part={self.hls_part}"
-            url = f"{self.base_url}?{self.static_query}&{dynamic_query}"
-            log.debug(f"Fetching playlist with URL: {url}")
-        else:
-            url = self.stream.url
-
+    def _fetch_playlist1(self) -> Response:
         res = self.session.http.get(
-            url,
+            self.stream.url,
             exception=StreamError,
             retries=self.playlist_reload_retries,
             **self.reader.request_params,
@@ -360,6 +352,31 @@ class HLSStreamWorker(SegmentedStreamWorker[HLSSegment, Response]):
 
         return res
 
+    def _fetch_playlist(self) -> Response:
+        res = self.session.http.get(
+            self.stream.url,
+            exception=StreamError,
+            retries=self.playlist_reload_retries,
+            **self.reader.request_params,
+        )
+        res.encoding = "utf-8"
+
+        # --- 在这里进行 MOUFLON 处理 ---
+        lines = res.text.splitlines()
+        new_lines = []
+        for i, line in enumerate(lines):
+            if line.startswith("#EXT-X-MOUFLON:FILE:"):
+                enc_str = line.split(":", 2)[2]  # FILE: 后面的加密串
+                real_url = MouflonDecryptor.decode(enc_str)
+                # 下一行通常是一个占位符 URL，比如 media.mp4，这里替换掉
+                # 注意 i+1 必须存在，并且不是空行
+                if i + 1 < len(lines) and lines[i+1] and not lines[i+1].startswith("#"):
+                    lines[i+1] = real_url
+        res._content = "\n".join(lines).encode("utf-8")
+        # --- 修改结束 ---
+
+        return res
+        
     def reload_playlist(self):
         if self.closed:  # pragma: no cover
             return
@@ -381,130 +398,40 @@ class HLSStreamWorker(SegmentedStreamWorker[HLSSegment, Response]):
             raise StreamError("Streams containing I-frames only are not playable")
 
         self.playlist_targetduration = playlist.targetduration or 0
+        self.playlist_reload_time = self._playlist_reload_time(playlist)
 
-        # 根据是否有aclAuth选择不同的逻辑
-        if self.is_acl_auth:
-            # 从EXT-X-PART-INF获取PART-TARGET
-            part_target_match = re.search(r'#EXT-X-PART-INF:PART-TARGET=([\d.]+)', res.text)
-            if part_target_match:
-                self.part_target = float(part_target_match.group(1))
-                log.debug(f"Set part_target to {self.part_target}")
-            # 调整刷新时间为PART-TARGET，适应低延迟HLS
-            self.playlist_reload_time = self.part_target
-
-            # 获取当前MEDIA-SEQUENCE
-            msn_match = re.search(r'#EXT-X-MEDIA-SEQUENCE:(\d+)', res.text)
-            current_msn = int(msn_match.group(1)) if msn_match else self.current_msn
-            if current_msn != self.current_msn:
-                log.debug(f"MEDIA-SEQUENCE updated from {self.current_msn} to {current_msn}")
-                self.current_msn = current_msn
-                # 同步_HLS_msn和self.playlist_sequence
-                self.hls_msn = current_msn
-                self.playlist_sequence = current_msn * 1000  # 确保与msn对齐
-                log.debug(f"Synchronized playlist_sequence to {self.playlist_sequence}")
-
-            # 解析EXT-X-PART和PRELOAD-HINT
-            parts = []
-            part_matches = re.findall(r'#EXT-X-PART:DURATION=([\d.]+),URI="(.+?)"(?:,INDEPENDENT=YES)?', res.text)
-            for duration, uri in part_matches:
-                parts.append((float(duration), uri))
-
-            preload_hint_match = re.search(r'#EXT-X-PRELOAD-HINT:TYPE=PART,URI="(.+)"', res.text)
-            new_preload_hint = None
-            if preload_hint_match:
-                new_preload_hint = preload_hint_match.group(1)
-                if new_preload_hint != self.last_preload_hint:
-                    self.preload_hint_url = new_preload_hint
-                    self.last_preload_hint = new_preload_hint
-                    log.debug(f"Using PRELOAD-HINT URL: {self.preload_hint_url}")
-                    # 将PRELOAD-HINT视为part3
-                    parts.append((self.part_target, self.preload_hint_url))
-                else:
-                    log.debug("PRELOAD-HINT URL unchanged, skipping")
-
-            # 为PART和PRELOAD-HINT构造HLSSegment对象，确保part_num在0-3
-            new_segments = []
-            if parts:
-                # 只取最新的4个part（part0到part3）
-                parts_to_process = parts[-4:] if len(parts) >= 4 else parts
-                for i, (duration, uri) in enumerate(parts_to_process):
-                    # 如果是media.mp4，使用PRELOAD-HINT的URL
-                    if uri.endswith("media.mp4") and self.preload_hint_url:
-                        uri = self.preload_hint_url
-                    # 强制part_num在0-3之间，基于parts_to_process的顺序
-                    part_num = i  # 0到3
-                    segment_num = current_msn * 1000 + part_num  # 构造唯一编号
-                    # 使用playlist的map和key（如果有）
-                    segment = HLSSegment(
-                        uri=uri,
-                        num=segment_num,
-                        duration=duration,
-                        title=None,
-                        key=playlist.segments[0].key if playlist.segments else None,
-                        byterange=None,
-                        date=None,
-                        map=playlist.segments[0].map if playlist.segments else None,
-                        discontinuity=False
-                    )
-                    new_segments.append(segment)
-                    log.debug(f"Added PART/PRELOAD-HINT segment {segment_num} with URI: {uri}")
-            else:
-                new_segments = playlist.segments
-
-            # 强制更新playlist_segments
-            self.process_segments(new_segments, force_update=True)
-
-            # 递增_HLS_msn和_HLS_part，基于part循环
-            self.hls_part = (self.hls_part + 1) % 4  # 循环0-3
-            if self.hls_part == 0:
-                self.hls_msn += 1  # 每4个part递增一次msn
-            log.debug(f"Updated MSN: {self.hls_msn}, PART: {self.hls_part}")
-        else:
-            # 原版逻辑
-            self.playlist_reload_time = self._playlist_reload_time(playlist)
-            if playlist.segments:
-                self.process_segments(playlist.segments)
+        if playlist.segments:
+            self.process_segments(playlist)
 
     def _playlist_reload_time(self, playlist: M3U8[HLSSegment, HLSPlaylist]) -> float:
         if self.playlist_reload_time_override == "segment" and playlist.segments:
             return playlist.segments[-1].duration
         if self.playlist_reload_time_override == "live-edge" and playlist.segments:
-            return sum(s.duration for s in playlist.segments[-max(1, self.live_edge - 1) :])
+            return sum(s.duration for s in playlist.segments[-max(1, self.live_edge - 1):])
         if type(self.playlist_reload_time_override) is float and self.playlist_reload_time_override > 0:
             return self.playlist_reload_time_override
         if playlist.targetduration:
             return playlist.targetduration
         if playlist.segments:
-            return sum(s.duration for s in playlist.segments[-max(1, self.live_edge - 1) :])
+            return sum(s.duration for s in playlist.segments[-max(1, self.live_edge - 1):])
 
         return self.playlist_reload_time
 
-    def process_segments(self, segments: list[HLSSegment], force_update: bool = False) -> None:
-        if not segments:
-            return
-
+    def process_segments(self, playlist: M3U8[HLSSegment, HLSPlaylist]) -> None:
+        segments = playlist.segments
         first_segment, last_segment = segments[0], segments[-1]
 
         if first_segment.key and first_segment.key.method != "NONE":
             log.debug("Segments in this playlist are encrypted")
 
-        # 根据是否有aclAuth选择不同的更新逻辑
-        if self.is_acl_auth and force_update:
-            self.playlist_changed = True
-            self.playlist_segments = segments
-            log.debug("Forced update of playlist_segments")
-        else:
-            self.playlist_changed = [s.num for s in self.playlist_segments] != [s.num for s in segments]
-            self.playlist_segments = segments
-            if not self.playlist_changed:
-                self.playlist_reload_time = max(self.playlist_reload_time / 2, 1)
+        self.playlist_changed = ([s.num for s in self.playlist_segments] != [s.num for s in segments])
+        self.playlist_segments = segments
 
-        if isinstance(segments, M3U8):
-            if segments.is_endlist:
-                self.playlist_end = last_segment.num
-        else:
-            # 如果是PART/PRELOAD-HINT分片，动态设置playlist_end
-            self.playlist_end = None
+        if not self.playlist_changed:
+            self.playlist_reload_time = max(self.playlist_reload_time / 2, 1)
+
+        if playlist.is_endlist:
+            self.playlist_end = last_segment.num
 
         if self.playlist_sequence < 0:
             if self.playlist_end is None and not self.hls_live_restart:
@@ -532,7 +459,7 @@ class HLSStreamWorker(SegmentedStreamWorker[HLSSegment, Response]):
         return True
 
     @staticmethod
-    def duration_to_sequence(duration: float, segments: list[HLSSegment]) -> int:
+    def duration_to_sequence(duration: float, segments: List[HLSSegment]) -> int:
         d = 0.0
         default = -1
 
@@ -548,7 +475,9 @@ class HLSStreamWorker(SegmentedStreamWorker[HLSSegment, Response]):
         return default
 
     def iter_segments(self):
-        self.playlist_reload_last = self.playlist_sequence_last = now()  # fmt: skip
+        self.playlist_reload_last \
+            = self.playlist_sequence_last \
+            = now()
 
         try:
             self.reload_playlist()
@@ -567,57 +496,48 @@ class HLSStreamWorker(SegmentedStreamWorker[HLSSegment, Response]):
             self.playlist_sequence = self.duration_to_sequence(self.duration_offset_start, self.playlist_segments)
 
         if self.playlist_segments:
-            log.debug(
-                "; ".join([
-                    f"First Sequence: {self.playlist_segments[0].num}",
-                    f"Last Sequence: {self.playlist_segments[-1].num}",
-                ]),
-            )
-            log.debug(
-                "; ".join([
-                    f"Start offset: {self.duration_offset_start}",
-                    f"Duration: {self.duration_limit}",
-                    f"Start Sequence: {self.playlist_sequence}",
-                    f"End Sequence: {self.playlist_end}",
-                ]),
-            )
+            log.debug("; ".join([
+                f"First Sequence: {self.playlist_segments[0].num}",
+                f"Last Sequence: {self.playlist_segments[-1].num}",
+            ]))
+            log.debug("; ".join([
+                f"Start offset: {self.duration_offset_start}",
+                f"Duration: {self.duration_limit}",
+                f"Start Sequence: {self.playlist_sequence}",
+                f"End Sequence: {self.playlist_end}",
+            ]))
 
         total_duration = 0
         while not self.closed:
             queued = False
-            if self.playlist_segments:
-                for segment in self.playlist_segments:
-                    if not self.valid_segment(segment):
-                        continue
+            for segment in self.playlist_segments:
+                if not self.valid_segment(segment):
+                    continue
 
-                    log.debug(f"Adding segment {segment.num} to queue")
-                    offset = segment.num - self.playlist_sequence
-                    if offset > 0:
-                        # 仅当offset较大时（例如超过10个part）发出警告
-                        if offset > 10:
-                            log.warning(
-                                (
-                                    f"Skipped segments {self.playlist_sequence}-{segment.num - 1} after playlist reload. "
-                                    if offset > 1
-                                    else f"Skipped segment {self.playlist_sequence} after playlist reload. "
-                                )
-                                + "This is unsupported and will result in incoherent output data.",
-                            )
-                        else:
-                            log.debug(f"Minor skip: {self.playlist_sequence} to {segment.num}")
+                log.debug(f"Adding segment {segment.num} to queue")
+                offset = segment.num - self.playlist_sequence
+                if offset > 0:
+                    log.warning(
+                        (
+                            f"Skipped segments {self.playlist_sequence}-{segment.num - 1} after playlist reload. "
+                            if offset > 1 else
+                            f"Skipped segment {self.playlist_sequence} after playlist reload. "
+                        )
+                        + "This is unsupported and will result in incoherent output data.",
+                    )
 
-                    yield segment
-                    queued = True
+                yield segment
+                queued = True
 
-                    total_duration += segment.duration
-                    if self.duration_limit and total_duration >= self.duration_limit:
-                        log.info(f"Stopping stream early after {self.duration_limit}")
-                        return
+                total_duration += segment.duration
+                if self.duration_limit and total_duration >= self.duration_limit:
+                    log.info(f"Stopping stream early after {self.duration_limit}")
+                    return
 
-                    if self.closed:  # pragma: no cover
-                        return
+                if self.closed:  # pragma: no cover
+                    return
 
-                    self.playlist_sequence = segment.num + 1
+                self.playlist_sequence = segment.num + 1
 
             # End of stream
             if self.closed or self.playlist_end is not None and (not queued or self.playlist_sequence > self.playlist_end):
@@ -646,18 +566,18 @@ class HLSStreamWorker(SegmentedStreamWorker[HLSSegment, Response]):
                     self.reload_playlist()
                 except StreamError as err:
                     log.warning(f"Failed to reload playlist: {err}")
-                    
-                    
+
+
 class HLSStreamReader(FilteredStream, SegmentedStreamReader[HLSSegment, Response]):
     __worker__ = HLSStreamWorker
     __writer__ = HLSStreamWriter
 
-    worker: HLSStreamWorker
-    writer: HLSStreamWriter
-    stream: HLSStream
+    worker: "HLSStreamWorker"
+    writer: "HLSStreamWriter"
+    stream: "HLSStream"
     buffer: RingBuffer
 
-    def __init__(self, stream: HLSStream):
+    def __init__(self, stream: "HLSStream"):
         self.request_params = dict(stream.args)
         # These params are reserved for internal use
         self.request_params.pop("exception", None)
@@ -679,12 +599,12 @@ class MuxedHLSStream(MuxedStream["HLSStream"]):
         self,
         session: Streamlink,
         video: str,
-        audio: str | list[str],
-        hlsstream: type[HLSStream] | None = None,
-        url_master: str | None = None,
-        multivariant: M3U8 | None = None,
+        audio: Union[str, List[str]],
+        hlsstream: Optional[Type["HLSStream"]] = None,
+        url_master: Optional[str] = None,
+        multivariant: Optional[M3U8] = None,
         force_restart: bool = False,
-        ffmpeg_options: Mapping[str, Any] | None = None,
+        ffmpeg_options: Optional[Dict[str, Any]] = None,
         **kwargs,
     ):
         """
@@ -736,18 +656,18 @@ class HLSStream(HTTPStream):
     """
 
     __shortname__ = "hls"
-    __reader__: ClassVar[type[HLSStreamReader]] = HLSStreamReader
-    __parser__: ClassVar[type[M3U8Parser[M3U8[HLSSegment, HLSPlaylist], HLSSegment, HLSPlaylist]]] = M3U8Parser
+    __reader__ = HLSStreamReader
+    __parser__: ClassVar[Type[M3U8Parser[M3U8[HLSSegment, HLSPlaylist], HLSSegment, HLSPlaylist]]] = M3U8Parser
 
     def __init__(
         self,
         session: Streamlink,
         url: str,
-        url_master: str | None = None,
-        multivariant: M3U8 | None = None,
+        url_master: Optional[str] = None,
+        multivariant: Optional[M3U8] = None,
         force_restart: bool = False,
         start_offset: float = 0,
-        duration: float | None = None,
+        duration: Optional[float] = None,
         **kwargs,
     ):
         """
@@ -819,11 +739,11 @@ class HLSStream(HTTPStream):
         name_prefix: str = "",
         check_streams: bool = False,
         force_restart: bool = False,
-        name_fmt: str | None = None,
+        name_fmt: Optional[str] = None,
         start_offset: float = 0,
-        duration: float | None = None,
+        duration: Optional[float] = None,
         **kwargs,
-    ) -> dict[str, HLSStream | MuxedHLSStream]:
+    ) -> Dict[str, Union["HLSStream", "MuxedHLSStream"]]:
         """
         Parse a variant playlist and return its streams.
 
@@ -841,19 +761,7 @@ class HLSStream(HTTPStream):
         """
 
         locale = session.localization
-        hls_audio_select = session.options.get("hls-audio-select")
-        audio_select_any: bool = "*" in hls_audio_select
-        audio_select_langs: list[Language] = []
-        audio_select_codes: list[str] = []
-
-        for item in hls_audio_select:
-            item = item.strip().lower()
-            if item == "*":
-                continue
-            try:
-                audio_select_langs.append(Language.get(item))
-            except LookupError:
-                audio_select_codes.append(item)
+        audio_select = session.options.get("hls-audio-select")
 
         request_args = session.http.valid_request_args(**kwargs)
         res = cls._fetch_variant_playlist(session, url, **request_args)
@@ -863,19 +771,19 @@ class HLSStream(HTTPStream):
         except ValueError as err:
             raise OSError(f"Failed to parse playlist: {err}") from err
 
-        stream_name: str | None
-        stream: HLSStream | MuxedHLSStream
-        streams: dict[str, HLSStream | MuxedHLSStream] = {}
+        stream_name: Optional[str]
+        stream: Union["HLSStream", "MuxedHLSStream"]
+        streams: Dict[str, Union["HLSStream", "MuxedHLSStream"]] = {}
 
         for playlist in multivariant.playlists:
             if playlist.is_iframe:
                 continue
 
-            names: dict[str, str | None] = dict(name=None, pixels=None, bitrate=None)
+            names: Dict[str, Optional[str]] = dict(name=None, pixels=None, bitrate=None)
             audio_streams = []
-            fallback_audio: list[Media] = []
-            default_audio: list[Media] = []
-            preferred_audio: list[Media] = []
+            fallback_audio: List[Media] = []
+            default_audio: List[Media] = []
+            preferred_audio: List[Media] = []
 
             for media in playlist.media:
                 if media.type == "VIDEO" and media.name:
@@ -893,39 +801,26 @@ class HLSStream(HTTPStream):
 
                 # if the media is "autoselect" and it better matches the users preferences, use that
                 # instead of default
-                if not default_audio and (media.autoselect and locale.equivalent(language=media.parsed_language)):
+                if not default_audio and (media.autoselect and locale.equivalent(language=media.language)):
                     default_audio = [media]
 
                 # select the first audio stream that matches the user's explict language selection
                 if (
-                    # user has selected all languages
-                    audio_select_any
-                    # compare plain language codes first
-                    or (
-                        media.language is not None
-                        and media.language in audio_select_codes
+                    (
+                        "*" in audio_select
+                        or media.language in audio_select
+                        or media.name in audio_select
                     )
-                    # then compare parsed language codes and user input
-                    or (
-                        media.parsed_language is not None
-                        and media.parsed_language in audio_select_langs
-                    )
-                    # then compare media name attribute
-                    or (
-                        media.name
-                        and media.name.lower() in audio_select_codes
-                    )
-                    # fallback: find first media playlist matching the user's locale
                     or (
                         (not preferred_audio or media.default)
                         and locale.explicit
-                        and locale.equivalent(language=media.parsed_language)
+                        and locale.equivalent(language=media.language)
                     )
-                ):  # fmt: skip
+                ):
                     preferred_audio.append(media)
 
             # final fallback on the first audio stream listed
-            if not fallback_audio and audio_streams and audio_streams[0].uri:
+            if not fallback_audio and len(audio_streams) and audio_streams[0].uri:
                 fallback_audio = [audio_streams[0]]
 
             if playlist.stream_info.resolution and playlist.stream_info.resolution.height:
@@ -947,7 +842,7 @@ class HLSStream(HTTPStream):
                     or names.get("name")
                     or names.get("pixels")
                     or names.get("bitrate")
-                )  # fmt: skip
+                )
 
             if not stream_name:
                 continue
@@ -979,7 +874,7 @@ class HLSStream(HTTPStream):
                 external_audio_msg = ", ".join([
                     f"(language={x.language}, name={x.name or 'N/A'})"
                     for x in external_audio
-                ])  # fmt: skip
+                ])
                 log.debug(f"Using external audio tracks for stream {stream_name} {external_audio_msg}")
 
                 stream = MuxedHLSStream(
