@@ -41,15 +41,11 @@ jobs:
           cat src/streamlink/_version.py
 
       - name: Create PyInstaller entry script
+        shell: pwsh
         run: |
-          mkdir -p build
-          cat > build/entry_point.py <<'PY'
-from streamlink_cli.main import main
+          mkdir -Force build
+          Set-Content -Path build/entry_point.py -Value 'from streamlink_cli.main import main; main()' -Encoding utf8
 
-if __name__ == "__main__":
-    main()
-PY
-          cat build/entry_point.py
 
       - name: Run PyInstaller
         run: |
