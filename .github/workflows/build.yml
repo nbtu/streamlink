@@ -41,12 +41,6 @@ jobs:
           pip install -r requirements.txt
           pip install -r dev-requirements.txt
 
-      # 修改_version.py以硬编码版本号
-      - name: Hardcode version in _version.py
-        run: |
-          $VERSION = 999 #$(python -c "import toml; print(toml.load('pyproject.toml')['project']['version'])")
-          echo "__version__ = \"$VERSION\"" > src/streamlink/_version.py
-          cat src/streamlink/_version.py  # 调试输出
 
       # 构建二进制
       - name: Build Binary with PyInstaller
