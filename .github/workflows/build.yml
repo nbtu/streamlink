@@ -44,7 +44,7 @@ jobs:
       # 修改_version.py以硬编码版本号
       - name: Hardcode version in _version.py
         run: |
-          VERSION="jier" #$(python -c "import toml; print(toml.load('pyproject.toml')['project']['version'])")
+          VERSION=999 #$(python -c "import toml; print(toml.load('pyproject.toml')['project']['version'])")
           echo "__version__ = \"$VERSION\"" > src/streamlink/_version.py
           cat src/streamlink/_version.py  # 调试输出
 
@@ -91,7 +91,7 @@ jobs:
       # 修改_version.py以硬编码版本号
       - name: Hardcode version in _version.py
         run: |
-          VERSION="jier" #$(python3.11 -c "import toml; print(toml.load('pyproject.toml')['project']['version'])")
+          VERSION=999 #$(python3.11 -c "import toml; print(toml.load('pyproject.toml')['project']['version'])")
           echo "__version__ = \"$VERSION\"" > src/streamlink/_version.py
           cat src/streamlink/_version.py  # 调试输出
 
