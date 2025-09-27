@@ -51,7 +51,7 @@ jobs:
         run: ls -la dist
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: streamlink-linux-${{ matrix.os }}
           path: dist/streamlink
