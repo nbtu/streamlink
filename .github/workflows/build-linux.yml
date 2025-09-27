@@ -8,11 +8,10 @@ on:
 
 jobs:
   build-linux:
-    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest]
         arch: [x64, arm64]
+    runs-on: ${{ matrix.arch == 'x64' && 'ubuntu-latest' || 'ubuntu-22.04-arm64' }}
 
     steps:
       - name: Checkout repository
@@ -41,11 +40,11 @@ jobs:
           cat src/streamlink/_version.py
 
       - name: Create PyInstaller entry script
-        shell: pwsh
         run: |
-          mkdir -Force build
-          Set-Content -Path build/entry_point.py -Value 'from streamlink_cli.main import main; main()' -Encoding utf8
-
+          mkdir -p build
+          # 单行 Python 脚本，避免 PowerShell 多行 here-string 问题
+          echo 'from streamlink_cli.main import main; main()' > build/entry_point.py
+          cat build/entry_point.py
 
       - name: Run PyInstaller
         run: |
