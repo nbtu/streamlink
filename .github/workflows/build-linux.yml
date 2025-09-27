@@ -1,0 +1,43 @@
+name: Build Streamlink Linux Multi-Arch
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]   # 也可以加 macos-latest, windows-latest
+        arch: [x64, arm64]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          architecture: ${{ matrix.arch }}
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          pip install -e .[decompress] pyinstaller
+
+      - name: Build binary
+        run: |
+          version="7.6.0"
+          echo "__version__ = \"$version\"" > src/streamlink/_version.py
+          mkdir -p build
+          echo "from streamlink_cli.main import main; main()" > build/entry_point.py
+          pyinstaller --noconfirm --onefile --name streamlink build/entry_point.py
+          ls -lh dist/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: streamlink-${{ runner.os }}-${{ matrix.arch }}
+          path: dist/streamlink*
