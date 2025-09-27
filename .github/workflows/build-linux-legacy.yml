@@ -1,0 +1,60 @@
+name: Build Streamlink Linux (Legacy)
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  build-linux-legacy:
+    runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        arch: [x64]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check system info
+        run: |
+          uname -a
+          ldd --version
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          architecture: x64
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg git
+          python -m pip install --upgrade pip
+          pip install -e .[decompress] pyinstaller
+
+      - name: Set project version
+        run: |
+          version="7.6.0"
+          echo "__version__ = \"$version\"" > src/streamlink/_version.py
+          cat src/streamlink/_version.py
+
+      - name: Create PyInstaller entry script
+        run: |
+          mkdir -p build
+          echo 'from streamlink_cli.main import main; main()' > build/entry_point.py
+          cat build/entry_point.py
+
+      - name: Run PyInstaller
+        run: |
+          if [ -f build/entry_point.spec ]; then rm build/entry_point.spec; fi
+          pyinstaller --noconfirm --onefile --name streamlink build/entry_point.py
+          ls -lh dist/
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: streamlink-linux-x64
+          path: dist/streamlink
