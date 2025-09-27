@@ -52,13 +52,11 @@ jobs:
         shell: pwsh
         run: |
           mkdir -Force build
-          @"
-from streamlink_cli.main import main
-
-if __name__ == '__main__':
-    main()
-"@ | Out-File -FilePath build/entry_point.py -Encoding utf8
+          'from streamlink_cli.main import main' | Out-File -FilePath build/entry_point.py -Encoding utf8
+          'if __name__ == "__main__":' | Out-File -FilePath build/entry_point.py -Encoding utf8 -Append
+          '    main()' | Out-File -FilePath build/entry_point.py -Encoding utf8 -Append
           Get-Content build/entry_point.py
+
 
       - name: Run PyInstaller to produce single-file EXE
         shell: pwsh
